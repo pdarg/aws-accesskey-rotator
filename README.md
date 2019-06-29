@@ -7,5 +7,6 @@ It's generally a good idea to avoid persistent secrets altogether by using IAM r
 ### Try it out
 The following will build the rotator lambda and deploy a demo environment to your AWS account using your default credential profile.
 ```
+make build
 make deploy
 ```

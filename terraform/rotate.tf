@@ -28,7 +28,7 @@ EOF
 resource "aws_iam_policy" "rotator_lambda_policy" {
   name = "AccessKeyRotatorLambdaPolicy"
   path = "/"
-  description = "TODO: fill me in"
+  description = "Allows access to get and update secrets manager secret and create new IAM access keys"
 
   policy = <<EOF
 {
@@ -42,9 +42,7 @@ resource "aws_iam_policy" "rotator_lambda_policy" {
         "secretsmanager:PutSecretValue",
         "secretsmanager:UpdateSecretVersionStage"
       ],
-      "Resource": [
-        "${aws_secretsmanager_secret.rotatable_secret.arn}"
-      ]
+      "Resource": "${aws_secretsmanager_secret.rotatable_secret.arn}"
     },
     {
       "Effect": "Allow",
@@ -52,9 +50,7 @@ resource "aws_iam_policy" "rotator_lambda_policy" {
         "iam:CreateAccessKey",
         "iam:ListAccessKeys"
       ],
-      "Resource": [
-        "${aws_iam_user.app_bot.arn}"
-      ]
+      "Resource": "${aws_iam_user.app_bot.arn}"
     }
   ]
 }
@@ -99,7 +95,7 @@ resource "aws_lambda_permission" "allow_secret_manager_call_rotate_lambda" {
 }
 
 resource "aws_lambda_function" "rotate_lambda" {
-  filename         = "rotate-lambda.zip"
+  filename         = "../rotate-lambda.zip"
   function_name    = "rotateAccessKey"
   role             = "${aws_iam_role.rotate_lambda_role.arn}"
   handler          = "rotate-lambda"

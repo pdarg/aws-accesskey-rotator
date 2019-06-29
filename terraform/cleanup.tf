@@ -28,7 +28,7 @@ EOF
 resource "aws_iam_policy" "cleanup_lambda_policy" {
   name = "AccessKeyCleanupLambdaPolicy"
   path = "/"
-  description = "TODO: fill me in"
+  description = "Allows access to get a secret manager secret, and list, update, and delete IAM access keys"
 
   policy = <<EOF
 {
@@ -39,9 +39,7 @@ resource "aws_iam_policy" "cleanup_lambda_policy" {
       "Action": [
         "secretsmanager:GetSecretValue"
       ],
-      "Resource": [
-        "${aws_secretsmanager_secret.rotatable_secret.arn}"
-      ]
+      "Resource": "${aws_secretsmanager_secret.rotatable_secret.arn}"
     },
     {
       "Effect": "Allow",
@@ -51,9 +49,7 @@ resource "aws_iam_policy" "cleanup_lambda_policy" {
         "iam:ListAccessKeys",
         "iam:UpdateAccessKey"
       ],
-      "Resource": [
-        "${aws_iam_user.app_bot.arn}"
-      ]
+      "Resource": "${aws_iam_user.app_bot.arn}"
     }
   ]
 }
@@ -97,7 +93,7 @@ resource "aws_lambda_permission" "allow_secret_manager_call_cleanup_lambda" {
 }
 
 resource "aws_lambda_function" "cleanup_lambda" {
-  filename         = "cleanup-lambda.zip"
+  filename         = "../cleanup-lambda.zip"
   function_name    = "cleanupAccessKey"
   role             = "${aws_iam_role.cleanup_lambda_role.arn}"
   handler          = "cleanup-lambda"

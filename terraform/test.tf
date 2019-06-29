@@ -28,7 +28,7 @@ EOF
 resource "aws_iam_policy" "test_lambda_policy" {
   name = "AccessKeyTestLambdaPolicy"
   path = "/"
-  description = "TODO: fill me in"
+  description = "Allows access to get a secrets manager secret"
 
   policy = <<EOF
 {
@@ -39,9 +39,7 @@ resource "aws_iam_policy" "test_lambda_policy" {
       "Action": [
         "secretsmanager:GetSecretValue"
       ],
-      "Resource": [
-        "${aws_secretsmanager_secret.rotatable_secret.arn}"
-      ]
+      "Resource": "${aws_secretsmanager_secret.rotatable_secret.arn}"
     }
   ]
 }
@@ -59,7 +57,7 @@ resource "aws_iam_role_policy_attachment" "lambda_test" {
 }
 
 resource "aws_iam_role" "test_lambda_role" {
-  name = "testAccessKeyLambdaRole"
+  name = "TestAccessKeyLambdaRole"
 
   assume_role_policy = <<EOF
 {
@@ -85,7 +83,7 @@ resource "aws_lambda_permission" "allow_secret_manager_call_test_lambda" {
 }
 
 resource "aws_lambda_function" "test_lambda" {
-  filename         = "test-lambda.zip"
+  filename         = "../test-lambda.zip"
   function_name    = "testAccessKey"
   role             = "${aws_iam_role.test_lambda_role.arn}"
   handler          = "test-lambda"
