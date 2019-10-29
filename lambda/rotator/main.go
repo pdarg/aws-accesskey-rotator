@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"time"
 
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/aws/aws-sdk-go/aws"
@@ -48,12 +47,6 @@ func init() {
 	if os.Getenv("DEBUG") == "true" {
 		log.SetLevel(log.DebugLevel)
 	}
-	log.SetFormatter(&log.JSONFormatter{
-		TimestampFormat: time.RFC3339Nano,
-		FieldMap: log.FieldMap{
-			log.FieldKeyTime: "@timestamp",
-		},
-	})
 }
 
 func Handler(ctx context.Context, event SecretRotationEvent) error {
@@ -66,24 +59,22 @@ func Handler(ctx context.Context, event SecretRotationEvent) error {
 	switch event.Step {
 	case "createSecret":
 		if err := createSecret(&ctx, &event); err != nil {
-			return err
+			return errors.Wrap(err, fmt.Sprintf("Caught error in %s step: %s", event.Step, err))
 		}
-		log.Info("Created new key")
 	case "setSecret":
 		// Nothing to do
 	case "testSecret":
 		if err := testSecret(&ctx, &event); err != nil {
-			return err
+			return errors.Wrap(err, fmt.Sprintf("Caught error in %s step: %s", event.Step, err))
 		}
-		log.Info("AccessKey test success")
 	case "finishSecret":
 		if err := finishSecret(&ctx, &event); err != nil {
-			return err
+			return errors.Wrap(err, fmt.Sprintf("Caught error in %s step: %s", event.Step, err))
 		}
-		log.Info("AccessKey rotate finished")
 	default:
 		log.Errorf("Unknown step: %s", event.Step)
 	}
+	log.Infof("%s finished", event.Step)
 
 	return nil
 }
@@ -99,22 +90,28 @@ func createSecret(ctx *context.Context, event *SecretRotationEvent) error {
 	// Get current secret
 	accessKey, err = getSecret(ctx, &event.SecretId, aws.String(StageCurrent))
 	if err != nil {
-		return err
-	}
-
-	// Delete inactive keys
-	list, err := listAccessKeys(&accessKey.UserName)
-	if err != nil {
-		return errors.Wrap(err, "getting access key list")
-	}
-	if len(list) > 1 {
-		return errors.New("user already has 2 active keys. cannot rotate")
+		if aerr, ok := err.(awserr.Error); ok {
+			if aerr.Code() == secretsmanager.ErrCodeResourceNotFoundException {
+				log.Infof("No %s secret version found", StageCurrent)
+			} else {
+				return aerr
+			}
+		} else {
+			log.Infof("Unknown exception: ok: %v aerr: %v err: %v", ok, aerr, err)
+			return err
+		}
 	}
 
 	// Create new key
 	key, err := createKey(&accessKey.UserName)
 	if err != nil {
-		return errors.Wrap(err, "creating new access key")
+		if aerr, ok := err.(awserr.Error); ok {
+			if aerr.Code() == iam.ErrCodeLimitExceededException {
+				return errors.New("user already has 2 active keys. cannot rotate")
+			}
+		}
+
+		return err
 	}
 
 	// Save new value
@@ -203,49 +200,16 @@ func getSecret(ctx *context.Context, secretID *string, stage *string) (*AccessKe
 		VersionStage: stage,
 	})
 	if err != nil {
-		return nil, errors.Wrap(err, fmt.Sprintf("failed to get %s secret", *stage))
+		return nil, err
 	}
 
 	accessKey := AccessKeySecret{}
 	err = json.Unmarshal([]byte(*secret.SecretString), &accessKey)
 	if err != nil {
-		return nil, errors.Wrap(err, fmt.Sprintf("failed to decode %s secret", *stage))
-	}
-
-	return &accessKey, nil
-}
-
-func testNewKey(accessKey *AccessKeySecret) error {
-	testSess, err := session.NewSession(&aws.Config{
-		Region:      aws.String(region),
-		Credentials: credentials.NewStaticCredentials(accessKey.Key, accessKey.Secret, ""),
-	})
-	if err != nil {
-		return errors.Wrap(err, "authenticating with new key")
-	}
-
-	svc := s3.New(testSess)
-	_, err = svc.GetObject(&s3.GetObjectInput{
-		Bucket: aws.String(testBucket),
-		Key:    aws.String(testObject),
-	})
-	if err != nil {
-		return errors.Wrap(err, "using new key")
-	}
-
-	return nil
-}
-
-func listAccessKeys(userName *string) ([]*iam.AccessKeyMetadata, error) {
-	svc := iam.New(sess)
-	result, err := svc.ListAccessKeys(&iam.ListAccessKeysInput{
-		UserName: userName,
-	})
-	if err != nil {
 		return nil, err
 	}
 
-	return result.AccessKeyMetadata, nil
+	return &accessKey, nil
 }
 
 func createKey(userName *string) (*iam.AccessKey, error) {
@@ -259,6 +223,27 @@ func createKey(userName *string) (*iam.AccessKey, error) {
 	}
 
 	return result.AccessKey, nil
+}
+
+func testNewKey(accessKey *AccessKeySecret) error {
+	testSess, err := session.NewSession(&aws.Config{
+		Region:      aws.String(region),
+		Credentials: credentials.NewStaticCredentials(accessKey.Key, accessKey.Secret, ""),
+	})
+	if err != nil {
+		return err
+	}
+
+	svc := s3.New(testSess)
+	_, err = svc.GetObject(&s3.GetObjectInput{
+		Bucket: aws.String(testBucket),
+		Key:    aws.String(testObject),
+	})
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func main() {

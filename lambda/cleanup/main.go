@@ -12,28 +12,22 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/iam"
 	"github.com/aws/aws-sdk-go/service/secretsmanager"
-	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 )
 
 var (
-	sess        = session.Must(session.NewSession())
-	secretsSess = secretsmanager.New(sess)
-	iamSess     = iam.New(sess)
+	sess    = session.Must(session.NewSession())
+	secrets = secretsmanager.New(sess)
+	iamSess = iam.New(sess)
 )
 
 const (
 	StageCurrent  = "AWSCURRENT"
 	StagePending  = "AWSPENDING"
 	StagePrevious = "AWSPREVIOUS"
-	region        = "us-west-2"
 
 	InactivitySeconds = 86400 // 24 hours
 )
-
-type CleanupEvent struct {
-	SecretId string `json:"SecretId"`
-}
 
 type AccessKeySecret struct {
 	Key      string `json:"Key"`
@@ -45,40 +39,44 @@ func init() {
 	if os.Getenv("DEBUG") == "true" {
 		log.SetLevel(log.DebugLevel)
 	}
-	log.SetFormatter(&log.JSONFormatter{
-		TimestampFormat: time.RFC3339Nano,
-		FieldMap: log.FieldMap{
-			log.FieldKeyTime: "@timestamp",
-		},
-	})
 }
 
-func Handler(ctx context.Context, event CleanupEvent) error {
-	log.WithFields(log.Fields{
-		"secret": event.SecretId,
-	}).Info("Cleaning up old secrets")
+func Handler(ctx context.Context) error {
+	log.Info("Starting cleanup")
 
-	accessKey, err := getSecret(&ctx, &event.SecretId, aws.String(StageCurrent))
+	secrets, err := listRotatableSecrets(&ctx)
 	if err != nil {
+		log.Infof("Error listing secret %s", err)
 		return err
 	}
 
-	log.Infof("Cleaning up secrets for %s", event.SecretId)
-	log.Infof("User %s", accessKey.UserName)
+	for _, secret := range secrets {
+		accessKey, err := getSecret(&ctx, secret.Name, aws.String(StageCurrent))
+		if err != nil {
+			log.Infof("Error fetching secret %s %s: %s", StageCurrent, *secret.Name, err)
+			continue
+		}
 
-	err = cleanupInactiveKeys(&ctx, &accessKey.UserName)
-	if err != nil {
-		return err
-	}
+		log.Infof("Cleaning up secrets for %s", *secret.Name)
+		log.Infof("User %s", accessKey.UserName)
 
-	err = cleanupOldSecrets(&ctx, &event.SecretId, &accessKey.UserName)
-	if err != nil {
-		return err
+		err = cleanupInactiveKeys(&ctx, &accessKey.UserName)
+		if err != nil {
+			log.Infof("Error cleaning up inactive keys for %s: %s", accessKey.UserName, err)
+			continue
+		}
+
+		err = cleanupOldSecrets(&ctx, secret.Name, &accessKey.UserName)
+		if err != nil {
+			log.Infof("Error cleaning previous secret keys for secret %s and user %s: %s", *secret.Name, accessKey.UserName, err)
+			continue
+		}
 	}
 
 	return nil
 }
 
+// Delete any keys marked inactive
 func cleanupInactiveKeys(ctx *context.Context, userName *string) error {
 	list, err := listAccessKeys(ctx, userName)
 	if err != nil {
@@ -152,19 +150,42 @@ func cleanupOldSecrets(ctx *context.Context, secretID *string, userName *string)
 	return nil
 }
 
+func listRotatableSecrets(ctx *context.Context) ([]*secretsmanager.SecretListEntry, error) {
+	result, err := secrets.ListSecretsWithContext(*ctx, &secretsmanager.ListSecretsInput{})
+	if err != nil {
+		log.Infof("Error listing secret %s", err)
+		return nil, err
+	}
+
+	output := []*secretsmanager.SecretListEntry{}
+	for _, secret := range result.SecretList {
+		if secret.Tags == nil {
+			continue
+		}
+		for _, tag := range secret.Tags {
+			if *tag.Key == "Rotatable" && *tag.Value == "true" {
+				output = append(output, secret)
+				break
+			}
+		}
+	}
+
+	return output, nil
+}
+
 func getSecret(ctx *context.Context, secretID *string, stage *string) (*AccessKeySecret, error) {
-	secret, err := secretsSess.GetSecretValueWithContext(*ctx, &secretsmanager.GetSecretValueInput{
+	secret, err := secrets.GetSecretValueWithContext(*ctx, &secretsmanager.GetSecretValueInput{
 		SecretId:     secretID,
 		VersionStage: stage,
 	})
 	if err != nil {
-		return nil, errors.Wrap(err, fmt.Sprintf("failed to get %s secret", *stage))
+		return nil, err
 	}
 
 	accessKey := AccessKeySecret{}
 	err = json.Unmarshal([]byte(*secret.SecretString), &accessKey)
 	if err != nil {
-		return nil, errors.Wrap(err, fmt.Sprintf("failed to decode %s secret", *stage))
+		return nil, err
 	}
 
 	return &accessKey, nil

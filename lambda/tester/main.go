@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"os"
-	"time"
 
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/aws/aws-sdk-go/aws"
@@ -18,19 +17,11 @@ import (
 )
 
 var (
-	sess    = session.Must(session.NewSession())
-	secrets = secretsmanager.New(sess)
+	testBucket string
+	testObject string
+	sess       = session.Must(session.NewSession())
+	secrets    = secretsmanager.New(sess)
 )
-
-const (
-	region     = "us-west-2"
-	testBucket = "rotate-key-test-bucket"
-	testObject = "test"
-)
-
-type TesterEvent struct {
-	SecretId string `json:"SecretId"`
-}
 
 type AccessKeySecret struct {
 	Key      string `json:"Key"`
@@ -42,30 +33,61 @@ func init() {
 	if os.Getenv("DEBUG") == "true" {
 		log.SetLevel(log.DebugLevel)
 	}
-	log.SetFormatter(&log.JSONFormatter{
-		TimestampFormat: time.RFC3339Nano,
-		FieldMap: log.FieldMap{
-			log.FieldKeyTime: "@timestamp",
-		},
-	})
 }
 
-func Handler(ctx context.Context, event TesterEvent) error {
-	log.WithFields(log.Fields{
-		"secret": event.SecretId,
-	}).Info("Running fake app using secret")
+func Handler(ctx context.Context) error {
+	log.Info("Running fake app")
 
-	accessKey, err := getSecret(&ctx, &event.SecretId)
+	if os.Getenv("TEST_BUCKET") == "" {
+		log.Errorf("Missing TEST_BUCKET in envrionment")
+		return errors.New("Missing TEST_BUCKET in envrionment")
+	}
+
+	if os.Getenv("TEST_OBJECT") == "" {
+		log.Errorf("Missing TEST_OBJECT in envrionment")
+		return errors.New("Missing TEST_OBJECT in envrionment")
+	}
+
+	testBucket = os.Getenv("TEST_BUCKET")
+	testObject = os.Getenv("TEST_OBJECT")
+
+	log.Infof("Using TEST_BUCKET=%s TEST_OBJECT=%s", testBucket, testObject)
+
+	result, err := secrets.ListSecretsWithContext(ctx, &secretsmanager.ListSecretsInput{})
 	if err != nil {
+		log.Infof("Error listing secret %s", err)
 		return err
 	}
 
-	log.Infof("Running fake app for %s", event.SecretId)
-	log.Infof("User %s", accessKey.UserName)
+	for _, secret := range result.SecretList {
 
-	err = useKey(accessKey)
-	if err != nil {
-		return err
+		rotatable := false
+		if secret.Tags != nil {
+			for _, tag := range secret.Tags {
+				if *tag.Key == "Rotatable" && *tag.Value == "true" {
+					rotatable = true
+					break
+				}
+			}
+		}
+		if rotatable == false {
+			continue
+		}
+
+		accessKey, err := getSecret(&ctx, secret.Name)
+		if err != nil {
+			log.Infof("Error fetching secret %s: %s", *secret.Name, err)
+			continue
+		}
+
+		log.Infof("Running fake app for %s", *secret.Name)
+		log.Infof("User %s", accessKey.UserName)
+
+		err = useKey(accessKey, testBucket, testObject)
+		if err != nil {
+			log.Infof("Error testing secret %s / %s: %s", *secret.Name, accessKey.Key, err)
+			continue
+		}
 	}
 
 	return nil
@@ -88,9 +110,8 @@ func getSecret(ctx *context.Context, secretID *string) (*AccessKeySecret, error)
 	return &accessKey, nil
 }
 
-func useKey(accessKey *AccessKeySecret) error {
+func useKey(accessKey *AccessKeySecret, testBucket string, testObject string) error {
 	testSess, err := session.NewSession(&aws.Config{
-		Region:      aws.String(region),
 		Credentials: credentials.NewStaticCredentials(accessKey.Key, accessKey.Secret, ""),
 	})
 	if err != nil {
