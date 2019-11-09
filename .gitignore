@@ -1,9 +1,4 @@
-build/*
-local/
-tools/
-cleanup-lambda*
-rotate-lambda*
-test-lambda*
+notes
 .terraform/
 *.tfstate
 *.tfstate.backup
