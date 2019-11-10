@@ -7,4 +7,4 @@ build-cleanup:
 	cd rotator/lambda/cleanup && GOOS=linux go build -o cleanup-lambda *.go
 
 clean:
-	rm build/*.zip
+	rm -f build/*
