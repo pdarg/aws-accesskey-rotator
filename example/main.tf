@@ -42,7 +42,7 @@ resource "aws_iam_user_policy" "app_bot1_test_data_policy" {
 
 // Setup the rotate and cleanup lambdas
 module "rotator" {
-  source = "../rotator"
+  source = "github.com/pdarg/aws-accesskey-rotator//rotator"
 
   cloudwatch_retention_days = var.cloudwatch_retention_days
   cleanup_lambda_run_rate   = "1 hour"
@@ -50,7 +50,7 @@ module "rotator" {
 
 // Setup the bot users that will have rotatable access keys
 module "app_bot" {
-  source = "../rotatable_user"
+  source = "github.com/pdarg/aws-accesskey-rotator//rotatable_user"
 
   user_name          = var.user_name
   secret_name        = var.secret_name
@@ -62,7 +62,7 @@ module "app_bot" {
 }
 
 module "app_bot1" {
-  source = "../rotatable_user"
+  source = "github.com/pdarg/aws-accesskey-rotator//rotatable_user"
 
   user_name          = var.user_name1
   secret_name        = var.secret_name1
