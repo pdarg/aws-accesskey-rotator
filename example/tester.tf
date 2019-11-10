@@ -1,11 +1,11 @@
 data "archive_file" "tester_lambda_zip" {
   type        = "zip"
-  source_file = "tester-lambda"
-  output_path = "tester-lambda.zip"
+  source_file = "${local.build_path}/tester-lambda"
+  output_path = "${local.build_path}/tester-lambda.zip"
 }
 
 resource "aws_lambda_function" "tester_lambda" {
-  filename         = "tester-lambda.zip"
+  filename         = "${local.build_path}/tester-lambda.zip"
   function_name    = "testAccessKey"
   role             = aws_iam_role.tester_lambda_role.arn
   handler          = "tester-lambda"

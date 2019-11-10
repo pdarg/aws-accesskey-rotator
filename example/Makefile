@@ -1,20 +1,23 @@
 build:
-	GOOS=linux go build -o tester-lambda lambda/tester/*.go
+	GOOS=linux go build -o ../build/tester-lambda lambda/tester/*.go
 
 init:
 	terraform init
 
-plan:
+get:
+	terraform get -update
+
+plan: get
 	terraform plan
 
-apply:
+apply: get
 	terraform apply
 
 reset:
 	../bin/reset_secrets.sh
 	../bin/delete_keys.sh
 
-destroy: reset
+destroy:
 	terraform destroy
-	# Secret Manager secrets are soft deleted. This script force deletes now
+	# Bypass secrets' retention window
 	../bin/delete_secrets.sh

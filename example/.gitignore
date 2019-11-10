@@ -1,1 +1,4 @@
 tester-lambda*
+.terraform/
+*.tfstate
+*.tfstate.backup
