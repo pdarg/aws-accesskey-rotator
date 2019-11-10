@@ -1,10 +1,10 @@
 build: build-rotate build-cleanup
 
 build-rotate:
-	GOOS=linux go build -o build/rotate-lambda lambda/rotator/*.go
+	cd rotator/lambda/rotate && GOOS=linux go build -o rotate-lambda *.go
 
 build-cleanup:
-	GOOS=linux go build -o build/cleanup-lambda lambda/cleanup/*.go
+	cd rotator/lambda/cleanup && GOOS=linux go build -o cleanup-lambda *.go
 
 clean:
 	rm build/*.zip

@@ -1,11 +1,11 @@
 data "archive_file" "rotate_lambda_zip" {
   type        = "zip"
-  source_file = "../build/rotate-lambda"
-  output_path = "../build/rotate-lambda.zip"
+  source_file = "${local.source_path}/rotate/rotate-lambda"
+  output_path = "${local.build_path}/rotate-lambda.zip"
 }
 
 resource "aws_lambda_function" "rotate_lambda" {
-  filename         = "../build/rotate-lambda.zip"
+  filename         = "${local.build_path}/rotate-lambda.zip"
   function_name    = "rotateAccessKey"
   handler          = "rotate-lambda"
   role             = aws_iam_role.rotate_lambda_role.arn

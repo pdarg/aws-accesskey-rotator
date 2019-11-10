@@ -1,11 +1,11 @@
 data "archive_file" "cleanup_lambda_zip" {
   type        = "zip"
-  source_file = "../build/cleanup-lambda"
-  output_path = "../build/cleanup-lambda.zip"
+  source_file = "${local.source_path}/cleanup/cleanup-lambda"
+  output_path = "${local.build_path}/cleanup-lambda.zip"
 }
 
 resource "aws_lambda_function" "cleanup_lambda" {
-  filename         = "../build/cleanup-lambda.zip"
+  filename         = "${local.build_path}/cleanup-lambda.zip"
   function_name    = "cleanupAccessKey"
   handler          = "cleanup-lambda"
   role             = aws_iam_role.cleanup_lambda_role.arn

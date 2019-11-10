@@ -4,6 +4,10 @@ provider "aws" {
 
 data "aws_caller_identity" "current" {}
 
+locals {
+  build_path = "${path.module}/../build"
+}
+
 resource "aws_s3_bucket" "test_bucket" {
   bucket = var.test_bucket
   acl    = "private"
@@ -59,6 +63,8 @@ module "app_bot" {
 
   user_tags   = var.default_tags
   secret_tags = var.default_tags
+
+  user_force_destroy = true
 }
 
 module "app_bot1" {
@@ -71,4 +77,6 @@ module "app_bot1" {
 
   user_tags   = var.default_tags
   secret_tags = var.default_tags
+
+  user_force_destroy = true
 }
